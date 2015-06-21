@@ -1,0 +1,120 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "Eshitha"
+date: "Sunday, June 14, 2015"
+output: html_document
+---
+
+##Summary
+The purpose of this project is to use Human Activity Recognition data (HAR) to build a prediction model that can be used to predict __how well__ a subject performs a given activity. The data used to build the model was collected from accelometers worn by 6 participants. This data was then preprocessed to identify relevant predictors. Finally the __random forest__ algorithm with __3 fold crossvalidation__ was used to determine the prediction model.
+
+##Data Preprocessing
+
+###Read the data
+Download the training and test data,interpret NA values accordingly and read the data into a dataframe in R 
+The training and test data sets can be accessed at the following links - 
+
+1. Training data - https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+2. Test data - https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r,results='hide',warning=FALSE}
+traindf<-read.csv("pml-training.csv")
+testdf<-read.csv("pml-testing.csv")
+
+head(traindf,3)
+```
+
+Looking at the data we can see that there are a number a variables with blank and junk values. We hence need to interpret these values as NA when reading in the file as shown below
+
+```{r,warning=FALSE, message=FALSE,results='hide'}
+traindf<-read.csv("pml-training.csv", na.strings = c("","NA","#DIV/0!"))
+testdf<-read.csv("pml-testing.csv", na.strings = c("","NA","#DIV/0!"))
+
+dim(traindf)
+dim(testdf)
+```
+
+The training data consists of 19622 rows of 160 variables. The test data consists of 20 rows of 160 variables
+
+###Determine appropriate predictors
+A number of variables in the data are associated with the participant, the time period when the measurement was taken or summarized information for a given time window. Since the real model will only be using a stream of sensor data variables that are related to the user or time or summary must be excluded
+
+```{r,warning=FALSE,message=FALSE}
+pattern<-c("user","timestamp","window","max","min","var","avg","stddev","amplitude","kurtosis","skewness")
+traindf<-traindf[,!grepl(paste(pattern,collapse="|"),names(traindf))]
+testdf<-testdf[,!grepl(paste(pattern,collapse="|"),names(testdf))]
+traindf<-traindf[,-which(names(traindf) %in% c("X"))]
+testdf<-testdf[,-which(names(testdf) %in% c("X"))]
+```
+
+###Slice the data
+Break up the data into training and test datasets. The training data set is used to solely build the model and the test data set is used to validate the accuracy of the model. For the current analysis, 60% of the data was used for training the model and 40% for validating.
+
+```{r,warning=FALSE,message=FALSE}
+library(caret)
+inTrain<-createDataPartition(y=traindf$classe,p=0.6,list=FALSE)
+train_subset<-traindf[inTrain,]
+validation_subset<-traindf[-inTrain,]
+```
+
+##Data modelling
+
+###Model building
+The decision trees have been constructed using random forest algorithm with 3 fold cross validation as shown below 
+
+```{r,warning=FALSE,message=FALSE,results='hide'}
+fitControl <- trainControl(method = "cv",number = 3,repeats = 10)
+set.seed(825)
+model <- train(classe ~ ., data = train_subset,method = "rf",trControl = fitControl)
+```
+
+###Model accuracy
+Measure the accuracy of the model using the validation dataset
+
+```{r,warning=FALSE,message=FALSE}
+set.seed(825)
+cm<-confusionMatrix(validation_subset$classe,predict(model,validation_subset))
+accuracy<-cm$overall[1]
+accuracy
+```
+
+This model is therefore __99.12%__ accurate and the out of sample error is __0.88%__
+
+###Variable importance
+The varImp function is used to determine the what features are most relevant in model construction. A second model "model2"" has been constructed with these 20 variables to see if this helps increase the accuracy of the model
+
+```{r,warning=FALSE,message=FALSE,results='hide'}
+
+varImp(model,scale=FALSE)
+train_subset2<-train_subset[which(names(validation_subset) %in% c("roll_belt","pitch_forearm","yaw_belt","magnet_dumbbell_z","magnet_dumbbell_y","magnet_dumbbell_y","pitch_belt","roll_forearm","accel_dumbbell_y","accel_forearm_x","roll_dumbbell","magnet_dumbbell_x","magnet_belt_z","total_accel_dumbbell","accel_dumbbell_z","magnet_forearm_z","magnet_belt_y","accel_belt_z","yaw_arm","gyros_belt_z","magnet_belt_x","classe")
+)]
+
+validation_subset2<-validation_subset[which(names(validation_subset) %in% c("roll_belt","pitch_forearm","yaw_belt","magnet_dumbbell_z"
+,"magnet_dumbbell_y","magnet_dumbbell_y","pitch_belt","roll_forearm","accel_dumbbell_y","accel_forearm_x","roll_dumbbell","magnet_dumbbell_x",                                                                     "magnet_belt_z","total_accel_dumbbell","accel_dumbbell_z","magnet_forearm_z","magnet_belt_y","accel_belt_z","yaw_arm","gyros_belt_z","magnet_belt_x","classe"))]
+
+fitControl <- trainControl(method = "cv",number = 3,repeats = 10)
+set.seed(825)
+model2 <- train(classe ~ ., data = train_subset2,method = "rf",trControl = fitControl)
+
+cm<-confusionMatrix(validation_subset2$classe,predict(model2,validation_subset2))
+accuracy<-cm$overall[1]
+accuracy
+```
+
+This model is therefore __98.78%__ accurate and the out of sample error rate is __1.22%__. Based on these results, we will continue to use our first model for prediction.
+
+###Predict outcome for test data
+```{r}
+predict(model, testdf)
+```
+
+The above results thus indicate what the output variable "classe" for test data based on the prediction algorithm. The variables can be interpreted as follows in the context of Weight Lifting Activity - 
+1. Class A - Exactly according to the specification
+2. Class B - Throwing the elbows to the front
+3. Class C - Lifting the dumbbell only halfway 
+4. Class D - Lowering the dumbbell only halfway 
+5. Class E - Throwing the hips to the front 
+
+#####Reference
+1. http://groupware.les.inf.puc-rio.br/har#ixzz3d4vnqY21
+2. http://topepo.github.io/caret/training.html
